@@ -9,11 +9,15 @@ import os
 import time
 import random
 import math
+import pygame
 
 MARGIN = 10  # pixels
 FONT_SIZE = 1
 FONT_THICKNESS = 1
 HANDEDNESS_TEXT_COLOR = (88, 205, 54) # vibrant green
+
+dirname = os.path.dirname(__file__)
+pygame.mixer.init()
 
 # finger detection
 class landmarker_and_result():
@@ -27,7 +31,6 @@ class landmarker_and_result():
       def update_result(result: mp.tasks.vision.HandLandmarkerResult, output_image: mp.Image, timestamp_ms: int):
          self.result = result
 
-      dirname = os.path.dirname(__file__)
       task_filename = os.path.join(dirname, 'hand_landmarker.task')
       # HandLandmarkerOptions (details here: https://developers.google.com/mediapipe/solutions/vision/hand_landmarker/python#live-stream)
       options = mp.tasks.vision.HandLandmarkerOptions( 
@@ -149,6 +152,9 @@ class path_generator():
          if circle.is_alive():
             new_circles.append(circle)
          else:
+            if not circle.tag_for_kill:
+               pygame.mixer.music.load(os.path.join(dirname, 'lose.wav'))
+               pygame.mixer.music.play()
             print("Deleting circle with id: ", id)
       self.circles = new_circles
 
@@ -198,6 +204,8 @@ def update_collisions(pg, landmarks):
                   print("Finger collided with circle: ", id)
                   c.color = (0, 255, 0)
                   pg.tag_circle(c)
+                  pygame.mixer.music.load(os.path.join(dirname, 'win.wav'))
+                  pygame.mixer.music.play()
          else:
             pass
 
