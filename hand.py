@@ -1,4 +1,3 @@
-# STEP 1: Import the necessary modules.
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -53,66 +52,42 @@ class landmarker_and_result():
       # close landmarker
       self.landmarker.close()
 
-# drawing all finger joints
-def draw_landmarks_on_image(rgb_image, detection_result: mp.tasks.vision.HandLandmarkerResult):
+# by their index as defined on:
+# https://developers.google.com/mediapipe/solutions/vision/hand_landmarker
+# empty array returns all landmarks
+def get_landmarks(detection_result: mp.tasks.vision.HandLandmarkerResult, desired_landmark_idxs = []):
    try:
       if detection_result.hand_landmarks == []:
-         return rgb_image
+         return []
       else:
          hand_landmarks_list = detection_result.hand_landmarks
-         annotated_image = np.copy(rgb_image)
 
          # Loop through the detected hands to visualize.
+         desired_landmarks = []
          for idx in range(len(hand_landmarks_list)):
             hand_landmarks = hand_landmarks_list[idx]
-            
-            # Draw the hand landmarks.
-            hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-            hand_landmarks_proto.landmark.extend([
-               landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in hand_landmarks])
-            mp.solutions.drawing_utils.draw_landmarks(
-               annotated_image,
-               hand_landmarks_proto,
-               mp.solutions.hands.HAND_CONNECTIONS,
-               mp.solutions.drawing_styles.get_default_hand_landmarks_style(),
-               mp.solutions.drawing_styles.get_default_hand_connections_style())
-         return annotated_image
+            if len(desired_landmark_idxs) == 0:
+               desired_landmarks += hand_landmarks
+            else:
+               desired_landmarks += [hand_landmarks[dli] for dli in desired_landmark_idxs]
+
+         return desired_landmarks
    except:
-      return rgb_image
+      return []
 
-# drawing finger tips only
-def draw_tips_on_image(rgb_image, detection_result: mp.tasks.vision.HandLandmarkerResult):
-   try:
-      if detection_result.hand_landmarks == []:
-         return rgb_image
-      else:
-         hand_landmarks_list = detection_result.hand_landmarks
-         annotated_image = np.copy(rgb_image)
-
-         # Loop through the detected hands to visualize.
-         for idx in range(len(hand_landmarks_list)):
-            hand_landmarks = hand_landmarks_list[idx]
-            
-            index = hand_landmarks[mp.solutions.hands.HandLandmark.INDEX_FINGER_TIP]
-            thumb = hand_landmarks[mp.solutions.hands.HandLandmark.THUMB_TIP]
-            middle = hand_landmarks[mp.solutions.hands.HandLandmark.MIDDLE_FINGER_TIP]
-            ring = hand_landmarks[mp.solutions.hands.HandLandmark.RING_FINGER_TIP]
-            pinky = hand_landmarks[mp.solutions.hands.HandLandmark.PINKY_TIP]
-            
-            tips = [index, thumb, middle, ring, pinky]
-
-            #print(tips)
-
-            hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-            hand_landmarks_proto.landmark.extend([
-               landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in tips])
-            mp.solutions.drawing_utils.draw_landmarks(
-               annotated_image,
-               hand_landmarks_proto)
-
-         return annotated_image
-   except:
-      return rgb_image
+def add_landmarks(image, landmarks, *options):
+   if len(landmarks) > 0:
+      try:
+         ref = np.copy(image)
+         # Draw the hand landmarks.
+         hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
+         hand_landmarks_proto.landmark.extend([
+            landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in landmarks])
+         mp.solutions.drawing_utils.draw_landmarks(ref, hand_landmarks_proto, *options)
+         return ref
+      except:
+         pass
+   return image
 
 class circle():
    def __init__(self):
@@ -210,36 +185,33 @@ def normalized_to_pixel(normalized_x: float, normalized_y: float,
   return x_px, y_px
 
 # check for finger tip and circle overlaps and tag circles for destruction
-def update_collisions(pg, detection_result: mp.tasks.vision.HandLandmarkerResult):
-   try:
-      if detection_result.hand_landmarks != []:
-         hand_landmarks_list = detection_result.hand_landmarks
-
-         fingers = []
-         for idx in range(len(hand_landmarks_list)):
-            hand_landmarks = hand_landmarks_list[idx]
-            
-            index = hand_landmarks[mp.solutions.hands.HandLandmark.INDEX_FINGER_TIP]
-            thumb = hand_landmarks[mp.solutions.hands.HandLandmark.THUMB_TIP]
-            middle = hand_landmarks[mp.solutions.hands.HandLandmark.MIDDLE_FINGER_TIP]
-            ring = hand_landmarks[mp.solutions.hands.HandLandmark.RING_FINGER_TIP]
-            pinky = hand_landmarks[mp.solutions.hands.HandLandmark.PINKY_TIP]
-            fingers += [index, thumb, middle, ring, pinky]
-
-         for finger in fingers:
-            fc = circle()
-            fc.r = 20 # hitbox forgiveness
-            fc.x, fc.y = normalized_to_pixel(finger.x, finger.y, pg.width, pg.height)
-            #print("Finger: (", fc.x, ",", fc.y, ")")
+def update_collisions(pg, landmarks):
+   if len(landmarks) > 0:
+      for landmark in landmarks:
+         fc = circle()
+         fc.r = 20 # hitbox forgiveness
+         iter = normalized_to_pixel(landmark.x, landmark.y, pg.width, pg.height)
+         if iter is not None:
+            fc.x, fc.y = iter
             for id, c in enumerate(pg.circles):
                if circle_collision(fc, c):
                   print("Finger collided with circle: ", id)
                   c.color = (0, 255, 0)
                   pg.tag_circle(c)
-   except:
-      pass
+         else:
+            pass
 
 def main():
+
+   # empty for all, specific ones can be found here:
+   # https://developers.google.com/mediapipe/solutions/vision/hand_landmarker
+   # specific_finger_landmarks = [mp.solutions.hands.HandLandmark.INDEX_FINGER_TIP, \
+   #                              mp.solutions.hands.HandLandmark.THUMB_TIP, \
+   #                              mp.solutions.hands.HandLandmark.MIDDLE_FINGER_TIP, \
+   #                              mp.solutions.hands.HandLandmark.RING_FINGER_TIP, \
+   #                              mp.solutions.hands.HandLandmark.PINKY_TIP]
+   specific_finger_landmarks = []
+
    # access webcam
    cap = cv2.VideoCapture(0)
 
@@ -268,6 +240,10 @@ def main():
 
          result = hand_landmarker.result
 
+         get_landmarks
+         
+         landmarks = get_landmarks(result, specific_finger_landmarks)
+
          laptime = round((time.time() - lasttime), 2)
 
          # generate a circle every pg.circle_delay
@@ -278,13 +254,18 @@ def main():
 
          pg.update_circles()
 
-         update_collisions(pg, result)
+         update_collisions(pg, landmarks)
 
          pg.draw_circles(frame)
 
-         frame = draw_tips_on_image(frame, result)
-         # draw all joints on frame
-         #frame = draw_landmarks_on_image(frame, result)
+         if len(specific_finger_landmarks) > 0:
+            frame = add_landmarks(frame, landmarks)
+         else:
+            frame = add_landmarks(frame, landmarks, \
+                                  mp.solutions.hands.HAND_CONNECTIONS, \
+                                  mp.solutions.drawing_styles.get_default_hand_landmarks_style(), \
+                                  mp.solutions.drawing_styles.get_default_hand_connections_style())
+
          if cv2.waitKey(1) == ord('q'):
             break
          cv2.imshow('frame',frame)  
