@@ -303,6 +303,7 @@ def main():
 
 
          if landmark_found:
+            # first landmark is "key finger" (i.e. what other landmarks are checked against for grab distance)
             landmark_subset = [landmarks[mp.solutions.hands.HandLandmark.THUMB_TIP], 
                                landmarks[mp.solutions.hands.HandLandmark.INDEX_FINGER_TIP],
                                landmarks[mp.solutions.hands.HandLandmark.MIDDLE_FINGER_TIP],
