@@ -134,20 +134,20 @@ class path_generator():
       self.circles = []
       self.width = width
       self.height = height
-      self.radius_range = [10, 30] # seconds
+      self.radius_range = [30, 40]
       assert self.radius_range[0] < self.radius_range[1]
 
    def generate_circle(self):
       c = circle()
       c.r = random.randint(self.radius_range[0], self.radius_range[1])
-      c.lifetime = random.randint(1, 5) # seconds
+      c.lifetime = random.randint(3, 7) # seconds
       c.x = random.randint(c.r, self.width - c.r)
       c.y = random.randint(c.r, self.height - c.r)
       print("Generating circle with radius ", c.r, " at (", c.x, ",", c.y, ") id: ", len(self.circles))
       self.circles.append(c)
    
    def update_circles(self):
-      new_circles = [] 
+      new_circles = []
       for id, circle in enumerate(self.circles):
          if circle.is_alive():
             new_circles.append(circle)
@@ -178,47 +178,85 @@ def circle_collision(c1, c2):
 def normalized_to_pixel(normalized_x: float, normalized_y: float, 
                         image_width: int, image_height: int):
 
-  # Checks if the float value is between 0 and 1.
-  def is_valid_normalized_value(value: float) -> bool:
-    return (value > 0 or math.isclose(0, value)) and (value < 1 or
-                                                      math.isclose(1, value))
+   # Checks if the float value is between 0 and 1.
+   def is_valid_normalized_value(value: float) -> bool:
+      return (value > 0 or math.isclose(0, value)) and (value < 1 or math.isclose(1, value))
 
-  if not (is_valid_normalized_value(normalized_x) and
-          is_valid_normalized_value(normalized_y)):
-    return None
-  x_px = min(math.floor(normalized_x * image_width), image_width - 1)
-  y_px = min(math.floor(normalized_y * image_height), image_height - 1)
-  return x_px, y_px
+   if not (is_valid_normalized_value(normalized_x) and is_valid_normalized_value(normalized_y)):
+      return None
+   x_px = min(math.floor(normalized_x * image_width), image_width - 1)
+   y_px = min(math.floor(normalized_y * image_height), image_height - 1)
+   return x_px, y_px
+
+# key finger is always first landmark
+def finger_collisions(pg, landmarks, colliding_fingers, minimum_threshold_dist):
+   assert len(landmarks) > 0
+   assert len(colliding_fingers) == len(landmarks)
+   key_finger = landmarks[0]
+   # TODO: TBH this normalization should occur for all landmarks in a separate function.
+   iter = normalized_to_pixel(key_finger.x, key_finger.y, pg.width, pg.height)
+   if iter is None:
+      return
+   # TODO: Clean this up, I hate Python's forced by reference list element copy...
+   kf_x, kf_y = iter
+   for i in range(1, len(landmarks)):
+      other_finger = landmarks[i]
+      o_iter = normalized_to_pixel(other_finger.x, other_finger.y, pg.width, pg.height)
+      if o_iter is None:
+         break
+      # TODO: Clean this up, I hate Python's forced by reference list element copy...
+      o_f_x, o_f_y = o_iter
+      dist2 = (kf_x - o_f_x) ** 2 + (kf_y - o_f_y) ** 2
+      threshold2 = minimum_threshold_dist ** 2
+      if dist2 < threshold2: # finger i is within threshold distance of key finger
+         colliding_fingers[0] = True
+         colliding_fingers[i] = True
+
 
 # check for finger tip and circle overlaps and tag circles for destruction
-def update_collisions(pg, landmarks):
+def update_collisions(pg, landmarks, colliding_fingers, finger_threshold_dist = 20):
    if len(landmarks) > 0:
-      for landmark in landmarks:
-         fc = circle()
-         fc.r = 20 # hitbox forgiveness
-         iter = normalized_to_pixel(landmark.x, landmark.y, pg.width, pg.height)
-         if iter is not None:
-            fc.x, fc.y = iter
-            for id, c in enumerate(pg.circles):
-               if circle_collision(fc, c):
-                  print("Finger collided with circle: ", id)
-                  c.color = (0, 255, 0)
-                  pg.tag_circle(c)
-                  pygame.mixer.music.load(os.path.join(dirname, 'win.wav'))
-                  pygame.mixer.music.play()
-         else:
-            pass
+      finger_collisions(pg, landmarks, colliding_fingers, finger_threshold_dist)
+      assert len(landmarks) == len(colliding_fingers)
+      for idx, colliding in enumerate(colliding_fingers):
+         # Only check collision between circle and fingers which collide with the thumb (i.e. "grab" motion)
+         if idx != 0 and colliding and colliding_fingers[0]:
+            key_finger = landmarks[0]
+            landmark = landmarks[idx]
+            fc = circle()
+            f_key = circle()
+            fc.r = 20 # hitbox forgiveness
+            f_key.r = fc.r
+            # TODO: TBH this normalization should occur for all landmarks in a separate function.
+            iter = normalized_to_pixel(landmark.x, landmark.y, pg.width, pg.height)
+            iter_key = normalized_to_pixel(key_finger.x, key_finger.y, pg.width, pg.height)
+            # Essentially either thumb or finger can collide with circle during a "grab" motion
+            if iter is not None: # Finger
+               fc.x, fc.y = iter
+               for id, c in enumerate(pg.circles):
+                  if circle_collision(fc, c):
+                     print("Finger collided with circle: ", id)
+                     c.color = (0, 255, 0)
+                     pg.tag_circle(c)
+                     pygame.mixer.music.load(os.path.join(dirname, 'win.wav'))
+                     pygame.mixer.music.play()
+            elif iter_key is not None: # Thumb
+               # TODO: Make this a function...
+               f_key.x, f_key.y = iter_key
+               for id, c in enumerate(pg.circles):
+                  if circle_collision(f_key, c):
+                     print("Thumb collided with circle: ", id)
+                     c.color = (0, 255, 0)
+                     pg.tag_circle(c)
+                     pygame.mixer.music.load(os.path.join(dirname, 'win.wav'))
+                     pygame.mixer.music.play()
+            else:
+               pass
+
+# landmark ids can be found here:
+# https://developers.google.com/mediapipe/solutions/vision/hand_landmarker
 
 def main():
-
-   # empty for all, specific ones can be found here:
-   # https://developers.google.com/mediapipe/solutions/vision/hand_landmarker
-   # specific_finger_landmarks = [mp.solutions.hands.HandLandmark.INDEX_FINGER_TIP, \
-   #                              mp.solutions.hands.HandLandmark.THUMB_TIP, \
-   #                              mp.solutions.hands.HandLandmark.MIDDLE_FINGER_TIP, \
-   #                              mp.solutions.hands.HandLandmark.RING_FINGER_TIP, \
-   #                              mp.solutions.hands.HandLandmark.PINKY_TIP]
-   specific_finger_landmarks = []
 
    # access webcam
    cap = cv2.VideoCapture(0)
@@ -242,15 +280,12 @@ def main():
          # mirror frame
          frame = cv2.flip(frame, 1)
 
-         # display frame
          # update landmarker results
          hand_landmarker.detect_async(frame)
 
          result = hand_landmarker.result
 
-         get_landmarks
-         
-         landmarks = get_landmarks(result, specific_finger_landmarks)
+         landmarks = get_landmarks(result, [])
 
          laptime = round((time.time() - lasttime), 2)
 
@@ -262,17 +297,33 @@ def main():
 
          pg.update_circles()
 
-         update_collisions(pg, landmarks)
+         landmark_found = len(landmarks) > 0
 
          pg.draw_circles(frame)
 
-         if len(specific_finger_landmarks) > 0:
-            frame = add_landmarks(frame, landmarks)
-         else:
-            frame = add_landmarks(frame, landmarks, \
-                                  mp.solutions.hands.HAND_CONNECTIONS, \
-                                  mp.solutions.drawing_styles.get_default_hand_landmarks_style(), \
-                                  mp.solutions.drawing_styles.get_default_hand_connections_style())
+
+         if landmark_found:
+            landmark_subset = [landmarks[mp.solutions.hands.HandLandmark.THUMB_TIP], 
+                               landmarks[mp.solutions.hands.HandLandmark.INDEX_FINGER_TIP],
+                               landmarks[mp.solutions.hands.HandLandmark.MIDDLE_FINGER_TIP],
+                               landmarks[mp.solutions.hands.HandLandmark.RING_FINGER_TIP],
+                               landmarks[mp.solutions.hands.HandLandmark.PINKY_TIP]]
+            # TODO: Make this False a struct with collision info
+            colliding_fingers = [False] * len(landmark_subset)
+            # Raise finger threshold distance if grab is not registering consistently.
+            update_collisions(pg, landmark_subset, colliding_fingers, finger_threshold_dist=15)
+            if len(landmark_subset) != 0:
+               assert len(landmark_subset) == len(colliding_fingers)
+               for idx, landmark in enumerate(landmark_subset):
+                  if colliding_fingers[idx]:
+                     frame = add_landmarks(frame, [landmark], None, mp.solutions.drawing_utils.DrawingSpec(color=mp.solutions.drawing_utils.GREEN_COLOR, circle_radius=5, thickness=5))
+                  else:
+                     frame = add_landmarks(frame, [landmark], None, mp.solutions.drawing_utils.DrawingSpec(color=mp.solutions.drawing_utils.RED_COLOR, circle_radius=5, thickness=5))
+            else:
+               frame = add_landmarks(frame, landmarks, \
+                                     mp.solutions.hands.HAND_CONNECTIONS, \
+                                     mp.solutions.drawing_styles.get_default_hand_landmarks_style(), \
+                                     mp.solutions.drawing_styles.get_default_hand_connections_style())
 
          if cv2.waitKey(1) == ord('q'):
             break
